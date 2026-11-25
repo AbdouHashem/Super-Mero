@@ -1,0 +1,212 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "User profile linked to Firebase Auth UID representing a student, parent, or admin on Super Mero.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "User UUID matching Firebase Auth UID",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "full_name": {
+          "type": "string",
+          "description": "Full name of the student or parent",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "description": "Account role",
+          "enum": ["student", "parent", "admin"]
+        },
+        "avatar_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Avatar image URL",
+          "maxLength": 500
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when profile was created"
+        }
+      },
+      "required": ["id", "full_name", "role", "created_at"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Educational course or interactive lesson in the Super Mero curriculum.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Primary course identifier",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Course or lesson title",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed educational description",
+          "minLength": 4,
+          "maxLength": 1000
+        },
+        "category": {
+          "type": "string",
+          "description": "Curriculum track category",
+          "enum": ["تأسيس القراءة", "القواعد المبسطة", "القصص التفاعلية"]
+        },
+        "age_group": {
+          "type": "string",
+          "description": "Target student age group",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "thumbnail_url": {
+          "type": "string",
+          "description": "Course cover image path or URL",
+          "maxLength": 500
+        },
+        "video_url": {
+          "type": "string",
+          "description": "Instructional video URL",
+          "maxLength": 500
+        },
+        "worksheet_url": {
+          "type": "string",
+          "description": "Downloadable PDF worksheet path or URL",
+          "maxLength": 500
+        },
+        "is_free": {
+          "type": "boolean",
+          "description": "Whether the lesson is free or paid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Publication timestamp"
+        }
+      },
+      "required": ["id", "title", "description", "category", "age_group", "is_free", "created_at"]
+    },
+    "StudentProgress": {
+      "title": "StudentProgress",
+      "description": "Tracks a student's completion and quiz score for a specific course.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Progress record identifier",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Reference to Profile id",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "course_id": {
+          "type": "string",
+          "description": "Reference to Course id",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether the student completed the lesson"
+        },
+        "score": {
+          "type": "number",
+          "description": "Quiz score achieved by the student"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last progress update timestamp"
+        }
+      },
+      "required": ["id", "user_id", "course_id", "completed", "score", "updated_at"]
+    },
+    "Subscriber": {
+      "title": "Subscriber",
+      "description": "Newsletter subscriber receiving weekly free worksheets and stories.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Deterministic hash identifier derived from email to enforce uniqueness",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Unique subscriber email address",
+          "minLength": 5,
+          "maxLength": 254
+        },
+        "subscribed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Subscription timestamp"
+        }
+      },
+      "required": ["id", "email", "subscribed_at"]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Authorizes elevated administrative roles for managing curriculum courses.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "created_at"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": { "$ref": "#/entities/Profile" },
+      "description": "Stores user profiles isolated per owner or admin."
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Publicly readable catalog of Arabic learning courses and lessons; admin-managed writes."
+    },
+    "/student_progress/{progressId}": {
+      "schema": { "$ref": "#/entities/StudentProgress" },
+      "description": "Tracks per-user completion and quiz score tied to valid profiles and courses."
+    },
+    "/subscribers/{subscriberId}": {
+      "schema": { "$ref": "#/entities/Subscriber" },
+      "description": "Stores newsletter email subscriptions with deterministic email-hash IDs for uniqueness and admin-only read access."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Trusted admin marker collection."
+    }
+  }
+}

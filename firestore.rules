@@ -1,0 +1,233 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'a.m.hashem20@gmail.com'
+      );
+    }
+
+    function isValidOptionalHttpsUrl(data, field) {
+      return !(field in data) || (
+        data[field] is string &&
+        data[field].size() >= 8 &&
+        data[field].size() <= 500 &&
+        data[field].matches('^https://.+')
+      );
+    }
+
+    function isValidOptionalResourceUrl(data, field) {
+      return !(field in data) || (
+        data[field] is string &&
+        data[field].size() >= 2 &&
+        data[field].size() <= 500 &&
+        (
+          data[field].matches('^https://.+') ||
+          data[field].matches('^/[a-zA-Z0-9_./\\-]+$') ||
+          data[field].matches('^#[a-zA-Z0-9_\\-]+$')
+        )
+      );
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidProfile(data) {
+      return data.keys().hasAll(['id', 'full_name', 'role', 'created_at'])
+        && data.keys().hasOnly(['id', 'full_name', 'role', 'avatar_url', 'created_at'])
+        && isValidId(data.id)
+        && data.full_name is string
+        && data.full_name.size() >= 1
+        && data.full_name.size() <= 120
+        && data.role in ['student', 'parent', 'admin']
+        && isValidOptionalHttpsUrl(data, 'avatar_url')
+        && data.created_at is timestamp;
+    }
+
+    function isValidCourse(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'category', 'age_group', 'is_free', 'created_at'])
+        && data.keys().hasOnly(['id', 'title', 'description', 'category', 'age_group', 'thumbnail_url', 'video_url', 'worksheet_url', 'is_free', 'created_at'])
+        && isValidId(data.id)
+        && data.title is string
+        && data.title.size() >= 2
+        && data.title.size() <= 160
+        && data.description is string
+        && data.description.size() >= 4
+        && data.description.size() <= 1000
+        && data.category in ['تأسيس القراءة', 'القواعد المبسطة', 'القصص التفاعلية']
+        && data.age_group is string
+        && data.age_group.size() >= 2
+        && data.age_group.size() <= 60
+        && isValidOptionalResourceUrl(data, 'thumbnail_url')
+        && isValidOptionalResourceUrl(data, 'video_url')
+        && isValidOptionalResourceUrl(data, 'worksheet_url')
+        && data.is_free is bool
+        && data.created_at is timestamp;
+    }
+
+    function isValidStudentProgress(data) {
+      return data.keys().hasAll(['id', 'user_id', 'course_id', 'completed', 'score', 'updated_at'])
+        && data.keys().hasOnly(['id', 'user_id', 'course_id', 'completed', 'score', 'updated_at'])
+        && isValidId(data.id)
+        && isValidId(data.user_id)
+        && isValidId(data.course_id)
+        && data.id == data.user_id + '__' + data.course_id
+        && data.completed is bool
+        && (data.score is int || data.score is float)
+        && data.score >= 0
+        && data.score <= 100
+        && data.updated_at is timestamp;
+    }
+
+    function isValidSubscriber(data) {
+      return data.keys().hasAll(['id', 'email', 'subscribed_at'])
+        && data.keys().hasOnly(['id', 'email', 'subscribed_at'])
+        && isValidId(data.id)
+        && data.id.matches('^([a-f0-9]{64}|sub_[a-f0-9]+_[0-9]+)$')
+        && data.email is string
+        && data.email.size() >= 5
+        && data.email.size() <= 254
+        && data.email == data.email.lower()
+        && data.email.matches('^[^\\s@]+@[^\\s@.]+(\\.[^\\s@.]+)+$')
+        && data.subscribed_at is timestamp;
+    }
+
+    function isValidAdminMarker(data) {
+      return data.keys().hasAll(['uid', 'created_at'])
+        && data.keys().hasOnly(['uid', 'created_at'])
+        && isValidId(data.uid)
+        && data.created_at is timestamp;
+    }
+
+    // --- Collection Rules ---
+    match /profiles/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isEmailVerified()
+        && isValidId(userId)
+        && isValidProfile(incoming())
+        && incoming().id == userId
+        && incoming().created_at == request.time
+        && (isAdmin() || (isOwner(userId) && incoming().role in ['student', 'parent']));
+      allow update: if isEmailVerified()
+        && isValidId(userId)
+        && isValidProfile(incoming())
+        && (
+          isAdmin() || (
+            isOwner(userId)
+            && incoming().id == existing().id
+            && incoming().role == existing().role
+            && incoming().created_at == existing().created_at
+            && incoming().diff(existing()).affectedKeys().hasOnly(['full_name', 'avatar_url'])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    match /courses/{courseId} {
+      allow get: if isValidId(courseId);
+      allow list: if true;
+      allow create: if isAdmin()
+        && isValidId(courseId)
+        && isValidCourse(incoming())
+        && incoming().id == courseId
+        && incoming().created_at == request.time;
+      allow update: if isAdmin()
+        && isValidId(courseId)
+        && isValidCourse(incoming())
+        && incoming().id == existing().id
+        && incoming().created_at == existing().created_at;
+      allow delete: if isAdmin() && isValidId(courseId);
+    }
+
+    match /student_progress/{progressId} {
+      allow get: if isValidId(progressId) && (
+        isAdmin() ||
+        (isSignedIn() && (
+          (resource == null && progressId.matches('^' + request.auth.uid + '__[a-zA-Z0-9_\\-]+$')) ||
+          (resource != null && existing().user_id == request.auth.uid)
+        ))
+      );
+      allow list: if isAdmin() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if isEmailVerified()
+        && isValidId(progressId)
+        && isValidStudentProgress(incoming())
+        && incoming().id == progressId
+        && incoming().updated_at == request.time
+        && (isAdmin() || incoming().user_id == request.auth.uid)
+        && exists(/databases/$(database)/documents/profiles/$(incoming().user_id))
+        && exists(/databases/$(database)/documents/courses/$(incoming().course_id));
+      allow update: if isEmailVerified()
+        && isValidId(progressId)
+        && isValidStudentProgress(incoming())
+        && (
+          isAdmin() || (
+            existing().user_id == request.auth.uid
+            && incoming().id == existing().id
+            && incoming().user_id == existing().user_id
+            && incoming().course_id == existing().course_id
+            && incoming().updated_at == request.time
+            && incoming().score >= existing().score
+            && (!existing().completed || incoming().completed)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'score', 'updated_at'])
+          )
+        );
+      allow delete: if isEmailVerified() && isValidId(progressId) && (isAdmin() || existing().user_id == request.auth.uid);
+    }
+
+    match /subscribers/{subscriberId} {
+      allow get: if isValidId(subscriberId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(subscriberId)
+        && isValidSubscriber(incoming())
+        && incoming().id == subscriberId
+        && incoming().subscribed_at == request.time;
+      allow update: if isAdmin()
+        && isValidId(subscriberId)
+        && isValidSubscriber(incoming())
+        && incoming().id == existing().id
+        && incoming().subscribed_at == existing().subscribed_at;
+      allow delete: if isAdmin() && isValidId(subscriberId);
+    }
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(adminId)
+        && isValidAdminMarker(incoming())
+        && incoming().uid == adminId
+        && incoming().created_at == request.time;
+      allow update, delete: if isAdmin() && isValidId(adminId);
+    }
+  }
+}
